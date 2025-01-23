@@ -1,14 +1,19 @@
 #!/bin/bash
 
+# provide prefix as command line argument
 # assume input file has suffix '.in' and output is printed to file with suffix '.out'
 # assume that if ibrav==0 the units in the CELL_PARAMETERS block have been provided in units of Angstrom
-#######################
-natoms=36
-prefix=Ca2MnAlO5.relax
+#####default parameters########
 outfile=info.dat
 create_poscar=1 #1:true, 0:false
-#######################
+##############################
 
+if [ $# -eq 0 ]; then
+  echo "Missing argument: input/output file prefix not provided."  >&2
+  exit 1
+fi
+
+prefix=$1
 stdin=$(echo "$prefix.in")
 stdout=$(echo "$prefix.out")
 bohr2ang=0.529177
@@ -16,6 +21,16 @@ Ry2eV=13.6057039763
 
 [ -f "$outfile" ] && rm "$outfile"
 
+# check if scf cycle has converged
+converged=$(grep 'convergence NOT achieved' "$stdout" )
+
+if [ ! -z "${converged}" ]; then
+  echo "SCF cycle did not converge within electron_maxstep steps."  >&2
+  exit 1
+fi
+
+# extract various data from output file
+natoms=$(grep 'nat' "$stdin" | tr -cd '[:digit:]')
 energy=$(grep ! "$stdout" | tail -1 | awk '{print $5}')
 energy_eV=$(echo "$energy * $Ry2eV" | bc -l)
 fermi=$(grep "the Fermi energy is" "$stdout" | tail -1 | awk '{print $5}')
@@ -24,6 +39,7 @@ force_eVAng=$(echo "$force * $Ry2eV / $bohr2ang" | bc -l)
 
 echo -e "E(eV)= $energy_eV" > "$outfile"
 echo -e "E_f(eV)= $fermi" >> "$outfile"
+
 # if using twochem calculation
 twochem_tag=$(grep 'twochem' "$stdin" | tr "." "\n" | awk 'NR==2')
 if [[ $twochem_tag == "true" ]]; then
